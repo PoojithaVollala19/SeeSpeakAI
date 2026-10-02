@@ -13,6 +13,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { ConversationFile } from '../types';
+import { getApiUrl } from '../utils/apiUrl';
 
 interface FileCardProps {
   file: ConversationFile;
@@ -32,7 +33,8 @@ export const FileCard: React.FC<FileCardProps> = ({ file, onRemove }) => {
   const isSheet = mime.includes('sheet') || mime.includes('excel') || name.match(/\.(csv|xlsx|xls)$/);
   const isCode = name.match(/\.(py|js|ts|tsx|jsx|json|html|css|cpp|java|go|rs|sql)$/);
 
-  const fileUrl = file.url || `/uploads/${file.file_path.split(/[\\/]/).pop()}`;
+  const rawFileUrl = file.url || `/uploads/${file.file_path.split(/[\\/]/).pop()}`;
+  const fileUrl = getApiUrl(rawFileUrl);
 
   const formatSize = (bytes: number) => {
     if (!bytes || bytes === 0) return '';

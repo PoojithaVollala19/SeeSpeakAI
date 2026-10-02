@@ -38,6 +38,12 @@ export function useWebSocket({
     if (import.meta.env.VITE_WS_URL) {
       return import.meta.env.VITE_WS_URL;
     }
+    if (import.meta.env.VITE_API_URL) {
+      const apiUrl = import.meta.env.VITE_API_URL.replace(/\/+$/, '');
+      const wsProto = apiUrl.startsWith('https:') ? 'wss:' : 'ws:';
+      const cleanHost = apiUrl.replace(/^https?:\/\//, '');
+      return `${wsProto}//${cleanHost}/ws/session`;
+    }
     const loc = window.location;
     // When running under vite proxy or localhost
     const host = loc.port === '5173' ? 'localhost:8000' : loc.host;

@@ -1,6 +1,8 @@
+import { getApiUrl } from './apiUrl';
+
 /**
  * authFetch wrapper that automatically attaches the user's Bearer token
- * and passes credentials for cookies.
+ * and resolves base API URL depending on environment.
  */
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const token = localStorage.getItem('seespeak_auth_token');
@@ -10,9 +12,11 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  return fetch(input, {
+  const resolvedInput = typeof input === 'string' ? getApiUrl(input) : input;
+
+  return fetch(resolvedInput, {
     ...init,
     headers,
-    credentials: 'same-origin',
+    credentials: init?.credentials || 'same-origin',
   });
 }

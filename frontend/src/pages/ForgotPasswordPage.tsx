@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { getApiUrl } from '../utils/apiUrl';
 import { 
   Sparkles, 
   Mail, 
@@ -39,14 +40,19 @@ export const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNaviga
 
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/forgot-password', {
+      const res = await fetch(getApiUrl('/api/auth/forgot-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: cleanEmail }),
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response
+      }
 
-      if (res.ok) {
+      if (res.ok && data) {
         setMessage(data.message || 'Reset instructions have been generated.');
         if (data.reset_token) {
           // Prefill token for instant demo / verification
@@ -54,7 +60,7 @@ export const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNaviga
         }
         setStep('reset');
       } else {
-        setErrorMessage(data.detail || 'Could not process password reset request.');
+        setErrorMessage(data?.detail || (res.status === 404 ? 'Service unreachable (404).' : `Could not process password reset request (${res.status}).`));
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error connecting to server.');
@@ -85,20 +91,25 @@ export const ForgotPasswordPage: React.FC<ForgotPasswordPageProps> = ({ onNaviga
 
     setIsLoading(true);
     try {
-      const res = await fetch('/api/auth/reset-password', {
+      const res = await fetch(getApiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: cleanToken, password: newPassword }),
       });
-      const data = await res.json();
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response
+      }
 
-      if (res.ok) {
+      if (res.ok && data) {
         setMessage('Password updated successfully! You can now log in with your new password.');
         setTimeout(() => {
           onNavigate('/login');
         }, 1800);
       } else {
-        setErrorMessage(data.detail || 'Invalid or expired reset token.');
+        setErrorMessage(data?.detail || (res.status === 404 ? 'Service unreachable (404).' : `Invalid or expired reset token (${res.status}).`));
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Network error connecting to server.');

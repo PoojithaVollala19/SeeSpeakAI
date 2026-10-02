@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { User, AuthResponse } from '../types';
+import { getApiUrl } from '../utils/apiUrl';
 
 interface AuthContextType {
   user: User | null;
@@ -47,18 +48,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
-      const res = await fetch('/api/auth/me', {
+      const res = await fetch(getApiUrl('/api/auth/me'), {
         headers: {
           'Authorization': `Bearer ${activeToken}`,
         },
       });
 
       if (res.ok) {
-        const data: AuthResponse = await res.json();
-        if (data.user) {
-          setUser(data.user);
-          setToken(activeToken);
-          localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+        try {
+          const data: AuthResponse = await res.json();
+          if (data.user) {
+            setUser(data.user);
+            setToken(activeToken);
+            localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+          }
+        } catch {
+          // Ignore non-JSON response during background auth validation
         }
       } else if (res.status === 401) {
         // Token expired or invalid
@@ -81,18 +86,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Login handler
   const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(getApiUrl('/api/auth/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.detail || 'Invalid email or password.' };
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response (e.g. HTML 404/502 from proxy or gateway)
       }
 
-      if (data.token && data.user) {
+      if (!res.ok) {
+        const errorMsg = data?.detail || (res.status === 404 ? 'Authentication service unreachable (404). Please verify backend connection.' : `Server error (${res.status}). Please try again.`);
+        return { success: false, error: errorMsg };
+      }
+
+      if (data && data.token && data.user) {
         localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem(USER_KEY, JSON.stringify(data.user));
         setToken(data.token);
@@ -109,18 +121,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Register handler
   const register = async (name: string, email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const res = await fetch('/api/auth/register', {
+      const res = await fetch(getApiUrl('/api/auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password }),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.detail || 'Registration failed.' };
+      let data: any = null;
+      try {
+        data = await res.json();
+      } catch {
+        // Non-JSON response (e.g. HTML 404/502 from proxy or gateway)
       }
 
-      if (data.token && data.user) {
+      if (!res.ok) {
+        const errorMsg = data?.detail || (res.status === 404 ? 'Authentication service unreachable (404). Please verify backend connection.' : `Server error (${res.status}). Please try again.`);
+        return { success: false, error: errorMsg };
+      }
+
+      if (data && data.token && data.user) {
         localStorage.setItem(TOKEN_KEY, data.token);
         localStorage.setItem(USER_KEY, JSON.stringify(data.user));
         setToken(data.token);
@@ -139,7 +158,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const activeToken = token || localStorage.getItem(TOKEN_KEY);
     if (activeToken) {
       try {
-        await fetch('/api/auth/logout', {
+        await fetch(getApiUrl('/api/auth/logout'), {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${activeToken}` },
         });
