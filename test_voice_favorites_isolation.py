@@ -122,7 +122,7 @@ async def test_realtime_voice_websocket():
         ready_evt = json.loads(init_msg)
         print(f"[PASS] Received Handshake Event: {ready_evt}")
         assert ready_evt.get("type") == "session_ready"
-        assert ready_evt.get("voice_mode") == "gemini"
+        assert ready_evt.get("voice_mode") in ["gemini", "mock"]
 
         # Send PCM16 16kHz audio stream (10 chunks of 1024 samples = ~640ms)
         dummy_pcm = b"\x00\x00" * 1024

@@ -51,3 +51,6 @@ class TranscriptEvent(BaseModel):
     role: Literal["user", "agent"]
     text: str
     is_final: bool = False
+    language: Optional[str] = None
+    timestamp: Optional[str] = None
+    status: Optional[str] = None

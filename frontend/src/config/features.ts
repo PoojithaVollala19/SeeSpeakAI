@@ -81,7 +81,7 @@ export const FEATURES: FeatureConfig[] = [
     tagline: 'Empathetic Spoken Voice Service',
     description: 'Experience an empathetic, spoken customer support agent ready to solve order inquiries, clarify technical problems, and assist in real-time.',
     route: '/customer-support',
-    aliases: ['support'],
+    aliases: ['support', 'customer-service', 'service'],
     iconName: 'Headphones',
     colorScheme: {
       bg: 'from-emerald-600/15 via-emerald-900/10 to-transparent',

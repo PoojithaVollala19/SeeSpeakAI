@@ -14,6 +14,10 @@ from backend.routes.history_routes import router as history_router
 from backend.routes.upload_routes import router as upload_router, UPLOAD_DIR
 from backend.routes.chat_routes import router as chat_router
 from backend.routes.websocket_routes import router as websocket_router
+from backend.routes.interview_routes import router as interview_router
+from backend.routes.ticket_routes import router as ticket_router
+from backend.routes.auth_routes import router as auth_router
+from backend.routes.analytics_routes import router as analytics_router
 from backend.utils.logging import logger
 
 app = FastAPI(
@@ -40,6 +44,10 @@ app.include_router(history_router)
 app.include_router(upload_router)
 app.include_router(chat_router)
 app.include_router(websocket_router)
+app.include_router(interview_router)
+app.include_router(ticket_router)
+app.include_router(auth_router)
+app.include_router(analytics_router)
 
 @app.get("/health")
 @app.get("/api/health")
@@ -73,10 +81,24 @@ if os.path.exists(FRONTEND_DIST):
 
 @app.on_event("startup")
 async def startup_event():
+    gemini_key = (os.getenv("GEMINI_API_KEY") or "").strip()
+    has_key = bool(gemini_key and len(gemini_key) > 5)
+    is_placeholder = bool(not gemini_key or "your_" in gemini_key.lower() or len(gemini_key) < 10 or "placeholder" in gemini_key.lower())
+
     logger.info("==========================================")
     logger.info("   seeSpeak AI Backend Starting Up       ")
     logger.info("   Port: 8000 | WebSocket: /ws/session    ")
+    if not has_key or is_placeholder:
+        logger.warning("   [CONFIG] GEMINI_API_KEY is not configured or using placeholder.")
+        logger.warning("   [CONFIG] Realtime voice pipeline will run with Mock fallback.")
+        logger.warning("   [CONFIG] To enable Live Gemini, set GEMINI_API_KEY in backend/.env")
+        logger.info("   [PROVIDER STATUS] MOCK REALTIME PROVIDER IS ACTIVE")
+    else:
+        logger.info(f"   [CONFIG] GEMINI_API_KEY detected (Length: {len(gemini_key)} chars)")
+        logger.info("   [CONFIG] Realtime Live voice models ready.")
+        logger.info("   [PROVIDER STATUS] Real Gemini Live Provider is ACTIVE")
     logger.info("==========================================")
+
 
 if __name__ == "__main__":
     import uvicorn

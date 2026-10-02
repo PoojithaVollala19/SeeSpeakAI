@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { ConversationHeader } from '../components/ConversationHeader';
 import { MultimodalChat } from '../components/MultimodalChat';
-import { VoiceModal } from '../components/VoiceModal';
 import { getFeatureConfig } from '../config/features';
+import { getLanguageInfo, getSpeechLocaleForText, detectTextLanguage } from '../config/languages';
+import { cleanForSpeechOutput } from '../utils/textCleaning';
 import { Conversation, Message, ConversationFile, SupportedLanguage } from '../types';
+import { authFetch } from '../utils/authFetch';
 
 interface FeatureWorkspaceProps {
   featureId: string;
@@ -13,7 +15,6 @@ interface FeatureWorkspaceProps {
   onBack: () => void;
   onNewConversation: () => void;
   onSelectFeature?: (route: string) => void;
-  onOpenVoice?: () => void;
   onConversationCreated?: (conv: Conversation) => void;
   initialPrompt?: string;
 }
@@ -26,7 +27,6 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
   onBack,
   onNewConversation,
   onSelectFeature,
-  onOpenVoice,
   onConversationCreated,
   initialPrompt,
 }) => {
@@ -38,7 +38,6 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isVoiceOpen, setIsVoiceOpen] = useState(false);
 
   const prevFeatureRef = useRef<string>(featureId);
 
@@ -46,7 +45,7 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
   const loadConversation = useCallback(
     async (id: string) => {
       try {
-        const res = await fetch(`/api/conversations/${id}`);
+        const res = await authFetch(`/api/conversations/${id}`);
         if (res.ok) {
           const data: Conversation = await res.json();
           // STRICT CONTEXT ISOLATION CHECK:
@@ -109,13 +108,18 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
       formData.append('feature', feature.id);
       formData.append('language', selectedLanguage);
 
-      const res = await fetch('/api/upload', {
+      const res = await authFetch('/api/upload', {
         method: 'POST',
         body: formData,
       });
 
       if (!res.ok) {
-        throw new Error(`Upload failed: ${res.statusText}`);
+        let errorMsg = `Upload failed (${res.status}): ${res.statusText}`;
+        try {
+          const errData = await res.json();
+          if (errData.detail) errorMsg = errData.detail;
+        } catch (_) {}
+        throw new Error(errorMsg);
       }
 
       const fileRecord = await res.json();
@@ -124,7 +128,7 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
       if (!activeConvId && convId) {
         setActiveConvId(convId);
         if (onConversationCreated) {
-          const convRes = await fetch(`/api/conversations/${convId}`);
+          const convRes = await authFetch(`/api/conversations/${convId}`);
           if (convRes.ok) {
             const newConv = await convRes.json();
             onConversationCreated(newConv);
@@ -143,8 +147,33 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
     }
   };
 
-  // Handle Send Message with strict feature scope
-  const handleSendMessage = async (text: string) => {
+  // Handle removing a file from the workspace
+  const handleRemoveFile = async (fileId: string) => {
+    try {
+      const res = await authFetch(`/api/upload/${fileId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setAttachedFiles((prev) => prev.filter((f) => f.id !== fileId));
+        if (activeConvId) {
+          await loadConversation(activeConvId);
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to delete file:', err);
+      setError(err.message || 'Failed to remove file');
+    }
+  };
+
+  // Cancel speech synthesis when unmounting or switching features
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [featureId]);
+
+  // Handle Send Message with strict feature scope and inputMode routing
+  const handleSendMessage = async (text: string, inputMode: 'text' | 'voice' = 'text') => {
     setIsLoading(true);
     setError(null);
     setStreamingText('');
@@ -163,7 +192,7 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
       let currentId = activeConvId;
       // If no conversation exists yet for this feature, create one now
       if (!currentId) {
-        const createRes = await fetch('/api/conversations', {
+        const createRes = await authFetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -180,8 +209,8 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
         }
       }
 
-      // Stream response strictly from backend with feature scope
-      const res = await fetch('/api/chat/stream', {
+      // Stream response strictly from backend with feature scope and inputMode
+      const res = await authFetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -189,16 +218,26 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
           message: text,
           language: selectedLanguage,
           feature: feature.id,
+          module: feature.id,
+          input_mode: inputMode,
+          user_prompt: text,
         }),
       });
 
       if (!res.ok) {
-        throw new Error(`Chat error: ${res.statusText}`);
+        let errorMsg = `Chat error (${res.status}): ${res.statusText}`;
+        try {
+          const errData = await res.json();
+          if (errData.detail) errorMsg = errData.detail;
+        } catch (_) {}
+        throw new Error(errorMsg);
       }
 
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       let accumulated = '';
+      let cleanVoiceResponse = '';
+      let returnedLanguage = '';
 
       if (reader) {
         while (true) {
@@ -214,9 +253,47 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
                   accumulated += parsed.text;
                   setStreamingText(accumulated);
                 }
+                if (parsed.clean_voice_response) {
+                  cleanVoiceResponse = parsed.clean_voice_response;
+                }
+                if (parsed.language) {
+                  returnedLanguage = parsed.language;
+                }
               } catch (_) {}
             }
           }
+        }
+      }
+
+      // If user explicitly typed in a native script (e.g. Telugu, Hindi) different from current selection,
+      // update active selection to match their explicit script input
+      const typedScript = detectTextLanguage(text);
+      if (typedScript && typedScript !== selectedLanguage) {
+        onSelectLanguage(typedScript as SupportedLanguage);
+      }
+
+      // STRICT INPUT-MODE ROUTING:
+      // If dictated/voice input mode: SPEAK response aloud using speech synthesis.
+      // If text typed input mode: DO NOT speak response aloud (display text only).
+      if (inputMode === 'voice') {
+        const textToSpeak = cleanVoiceResponse || cleanForSpeechOutput(accumulated);
+        if (textToSpeak && 'speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(textToSpeak);
+          const activeSpeechLang = typedScript || selectedLanguage;
+          const speechLocale = getSpeechLocaleForText(textToSpeak, activeSpeechLang);
+          utterance.lang = speechLocale;
+          // Pick best matching voice for speechLocale if available
+          const voices = window.speechSynthesis.getVoices();
+          const targetPrefix = speechLocale.split('-')[0].toLowerCase();
+          const matchingVoice = voices.find((v) =>
+            v.lang.toLowerCase().replace('_', '-').startsWith(speechLocale.toLowerCase()) ||
+            v.lang.toLowerCase().startsWith(targetPrefix)
+          );
+          if (matchingVoice) {
+            utterance.voice = matchingVoice;
+          }
+          window.speechSynthesis.speak(utterance);
         }
       }
 
@@ -240,7 +317,7 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
   }, [initialPrompt]);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-slate-950 overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 overflow-hidden transition-colors duration-200">
       <ConversationHeader
         title={feature.title}
         subtitle={conversation?.title || feature.tagline}
@@ -257,6 +334,7 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
         attachedFiles={attachedFiles}
         onSendMessage={handleSendMessage}
         onFileUpload={handleFileUpload}
+        onRemoveFile={handleRemoveFile}
         selectedLanguage={selectedLanguage}
         onSelectLanguage={onSelectLanguage}
         isLoading={isLoading}
@@ -266,21 +344,6 @@ export const FeatureWorkspace: React.FC<FeatureWorkspaceProps> = ({
         featureTitle={feature.title}
         featureDescription={feature.description}
         samplePrompts={feature.samplePrompts}
-        onOpenVoice={() => setIsVoiceOpen(true)}
-      />
-
-      <VoiceModal
-        isOpen={isVoiceOpen}
-        onClose={() => {
-          setIsVoiceOpen(false);
-          if (activeConvId) {
-            loadConversation(activeConvId);
-          }
-        }}
-        featureId={feature.id}
-        featureTitle={feature.title}
-        conversationId={activeConvId}
-        selectedLanguage={selectedLanguage}
       />
     </div>
   );

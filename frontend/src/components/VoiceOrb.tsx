@@ -13,16 +13,24 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel, onClick }
 
   const getOrbGradient = () => {
     switch (state) {
+      case 'ai_speaking':
       case 'speaking':
         return 'from-cyan-400 via-indigo-500 to-purple-600 shadow-indigo-500/50';
+      case 'waiting_for_candidate':
+        return 'from-teal-400 via-emerald-500 to-cyan-600 shadow-teal-500/50 animate-pulse';
+      case 'candidate_speaking':
       case 'listening':
         return 'from-emerald-400 via-teal-500 to-cyan-600 shadow-emerald-500/50';
+      case 'processing_answer':
+        return 'from-purple-500 via-indigo-500 to-sky-500 shadow-purple-500/50 animate-pulse';
       case 'connecting':
         return 'from-amber-400 via-orange-500 to-rose-500 shadow-amber-500/50 animate-pulse';
       case 'interrupted':
         return 'from-rose-500 via-pink-600 to-purple-600 shadow-rose-500/50';
       case 'error':
         return 'from-red-600 via-rose-600 to-pink-700 shadow-red-500/50';
+      case 'ending':
+      case 'ended':
       case 'idle':
       default:
         return 'from-slate-600 via-slate-700 to-slate-800 shadow-slate-700/30';
@@ -31,19 +39,28 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel, onClick }
 
   const getStatusLabel = () => {
     switch (state) {
-      case 'speaking':
-        return 'AI Speaking...';
-      case 'listening':
-        return 'Listening to you...';
       case 'connecting':
-        return 'Connecting Live...';
+        return 'Connecting...';
+      case 'ai_speaking':
+      case 'speaking':
+        return 'Interviewer is speaking...';
+      case 'waiting_for_candidate':
+      case 'candidate_speaking':
+      case 'listening':
+        return 'Listening...';
+      case 'processing_answer':
+        return 'Thinking...';
       case 'interrupted':
         return 'Interrupted';
       case 'error':
-        return 'Connection Error';
+        return 'Connection error';
+      case 'ending':
+        return 'Ending interview...';
+      case 'ended':
+        return 'Interview ended';
       case 'idle':
       default:
-        return 'Click to Start Voice';
+        return 'Start Voice';
     }
   };
 
@@ -106,11 +123,6 @@ export const VoiceOrb: React.FC<VoiceOrbProps> = ({ state, audioLevel, onClick }
         <span className="text-sm font-medium tracking-wide text-slate-300">
           {getStatusLabel()}
         </span>
-        {state === 'speaking' && (
-          <span className="text-xs text-indigo-400/80 animate-pulse">
-            Speak anytime to interrupt
-          </span>
-        )}
       </div>
     </div>
   );

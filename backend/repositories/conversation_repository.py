@@ -2,8 +2,9 @@ import sqlite3
 import os
 import json
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Generator
 from backend.utils.logging import logger
 
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "see_speak.db")
@@ -17,6 +18,7 @@ FEATURE_MAPPING = {
     "ai-interview": "ai-interview",
     "support": "customer-support",
     "customer-support": "customer-support",
+    "customer-service": "customer-support",
     "meeting": "video-audio-review",
     "video-audio-review": "video-audio-review",
     "study": "data-study",
@@ -35,11 +37,16 @@ class ConversationRepository:
         self.db_path = db_path
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
 
     def _init_db(self):
         """Initializes and migrates SQLite tables for conversations, messages, and files."""
@@ -98,6 +105,20 @@ class ConversationRepository:
                 cursor.execute("ALTER TABLE conversations ADD COLUMN is_favorite INTEGER DEFAULT 0")
                 logger.info("Migrated conversations: added is_favorite column")
 
+            # Schema migration check: ensure conversations has ticket_id and summary_json
+            if "ticket_id" not in conv_columns:
+                cursor.execute("ALTER TABLE conversations ADD COLUMN ticket_id TEXT DEFAULT ''")
+                logger.info("Migrated conversations: added ticket_id column")
+            if "summary_json" not in conv_columns:
+                cursor.execute("ALTER TABLE conversations ADD COLUMN summary_json TEXT DEFAULT ''")
+                logger.info("Migrated conversations: added summary_json column")
+
+            # Schema migration check: ensure conversations has user_id column
+            if "user_id" not in conv_columns:
+                cursor.execute("ALTER TABLE conversations ADD COLUMN user_id TEXT DEFAULT ''")
+                cursor.execute("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id)")
+                logger.info("Migrated conversations: added user_id column and index")
+
         logger.info(f"Initialized SQLite database at {self.db_path}")
 
     def create_conversation(
@@ -105,20 +126,24 @@ class ConversationRepository:
         feature: str = "document-analysis",
         mode: str = "general",
         language: str = "en",
-        title: Optional[str] = None
+        title: Optional[str] = None,
+        ticket_id: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> Dict[str, Any]:
         conv_id = f"conv_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
         canonical_feature = normalize_feature_id(feature)
         initial_title = title or "New Conversation"
+        t_id = ticket_id or ""
+        u_id = (user_id or "").strip()
 
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO conversations (id, title, feature, mode, language, is_favorite, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+                INSERT INTO conversations (id, title, feature, mode, language, is_favorite, ticket_id, user_id, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
                 """,
-                (conv_id, initial_title, canonical_feature, mode, language, now, now)
+                (conv_id, initial_title, canonical_feature, mode, language, t_id, u_id, now, now)
             )
 
         return {
@@ -129,16 +154,25 @@ class ConversationRepository:
             "mode": mode,
             "language": language,
             "is_favorite": False,
+            "ticket_id": t_id,
+            "user_id": u_id,
+            "summary": None,
             "created_at": now,
             "updated_at": now,
             "messages": [],
             "files": []
         }
 
-    def get_conversation(self, conv_id: str) -> Optional[Dict[str, Any]]:
+    def get_conversation(self, conv_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM conversations WHERE id = ?", (conv_id,))
+            if user_id:
+                cursor.execute(
+                    "SELECT * FROM conversations WHERE id = ? AND (user_id = ? OR user_id = '' OR user_id = 'default_user' OR user_id IS NULL)",
+                    (conv_id, user_id)
+                )
+            else:
+                cursor.execute("SELECT * FROM conversations WHERE id = ?", (conv_id,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -148,6 +182,15 @@ class ConversationRepository:
             conv["feature"] = canonical_feature
             conv["feature_id"] = canonical_feature
             conv["is_favorite"] = bool(conv.get("is_favorite", 0))
+            conv["ticket_id"] = conv.get("ticket_id") or ""
+
+            if conv.get("summary_json"):
+                try:
+                    conv["summary"] = json.loads(conv["summary_json"])
+                except Exception:
+                    conv["summary"] = None
+            else:
+                conv["summary"] = None
 
             # Fetch messages
             cursor.execute(
@@ -161,17 +204,70 @@ class ConversationRepository:
                 "SELECT * FROM conversation_files WHERE conversation_id = ? ORDER BY created_at ASC",
                 (conv_id,)
             )
-            conv["files"] = [dict(r) for r in cursor.fetchall()]
+            files = []
+            for r in cursor.fetchall():
+                f_dict = dict(r)
+                f_dict["url"] = f"/uploads/{os.path.basename(f_dict.get('file_path', ''))}"
+                files.append(f_dict)
+            conv["files"] = files
+
+            # Attach associated ticket if support feature or ticket_id exists
+            if canonical_feature == "customer-support" or conv["ticket_id"]:
+                try:
+                    from backend.repositories.ticket_repository import ticket_repository
+                    ticket = None
+                    if conv["ticket_id"]:
+                        ticket = ticket_repository.get_ticket(conv["ticket_id"])
+                    if not ticket:
+                        ticket = ticket_repository.get_ticket_by_conversation(conv_id)
+                    if ticket:
+                        conv["ticket"] = ticket
+                        conv["ticket_id"] = ticket["id"]
+                except Exception as e:
+                    logger.warning(f"Could not load ticket for conv {conv_id}: {e}")
+
             return conv
+
+    def save_summary(
+        self,
+        conv_id: str,
+        summary_data: Dict[str, Any],
+        ticket_id: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        now = datetime.now(timezone.utc).isoformat()
+        summary_str = json.dumps(summary_data, ensure_ascii=False)
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            if ticket_id:
+                cursor.execute(
+                    "UPDATE conversations SET summary_json = ?, ticket_id = ?, updated_at = ? WHERE id = ?",
+                    (summary_str, ticket_id, now, conv_id)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE conversations SET summary_json = ?, updated_at = ? WHERE id = ?",
+                    (summary_str, now, conv_id)
+                )
+        return self.get_conversation(conv_id)
+
+    def update_conversation_ticket(self, conv_id: str, ticket_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE conversations SET ticket_id = ?, updated_at = ? WHERE id = ?",
+                (ticket_id, now, conv_id)
+            )
 
     def list_conversations(
         self,
         feature: Optional[str] = None,
-        query: Optional[str] = None
+        query: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Lists conversations. When feature is provided, strictly limits results
         to conversations belonging to that specific feature.
+        When user_id is provided, strictly limits results to that authenticated user.
         """
         canonical_feature = normalize_feature_id(feature) if feature else None
 
@@ -179,6 +275,13 @@ class ConversationRepository:
             cursor = conn.cursor()
             conditions = []
             params = []
+
+            if user_id:
+                conditions.append("c.user_id = ?")
+                params.append(user_id)
+            elif user_id is not None:
+                # Explicit unauthenticated or empty user
+                conditions.append("(c.user_id = '' OR c.user_id = 'default_user' OR c.user_id IS NULL)")
 
             if canonical_feature and canonical_feature != "all":
                 # Find matching feature or legacy alias
@@ -219,12 +322,18 @@ class ConversationRepository:
                 result.append(c)
             return result
 
-    def toggle_favorite(self, conv_id: str, is_favorite: Optional[bool] = None) -> Optional[Dict[str, Any]]:
+    def toggle_favorite(self, conv_id: str, is_favorite: Optional[bool] = None, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Toggles or sets the is_favorite state of a conversation and returns the updated state."""
         now = datetime.now(timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT is_favorite FROM conversations WHERE id = ?", (conv_id,))
+            if user_id:
+                cursor.execute(
+                    "SELECT is_favorite FROM conversations WHERE id = ? AND (user_id = ? OR user_id = '' OR user_id IS NULL)",
+                    (conv_id, user_id)
+                )
+            else:
+                cursor.execute("SELECT is_favorite FROM conversations WHERE id = ?", (conv_id,))
             row = cursor.fetchone()
             if not row:
                 return None
@@ -233,30 +342,48 @@ class ConversationRepository:
             new_val = not current_val if is_favorite is None else bool(is_favorite)
             new_int = 1 if new_val else 0
 
-            cursor.execute(
-                "UPDATE conversations SET is_favorite = ?, updated_at = ? WHERE id = ?",
-                (new_int, now, conv_id)
-            )
+            if user_id:
+                cursor.execute(
+                    "UPDATE conversations SET is_favorite = ?, updated_at = ? WHERE id = ? AND (user_id = ? OR user_id = '' OR user_id IS NULL)",
+                    (new_int, now, conv_id, user_id)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE conversations SET is_favorite = ?, updated_at = ? WHERE id = ?",
+                    (new_int, now, conv_id)
+                )
             return {
                 "id": conv_id,
                 "is_favorite": new_val,
                 "updated_at": now
             }
 
-    def update_title(self, conv_id: str, new_title: str) -> bool:
+    def update_title(self, conv_id: str, new_title: str, user_id: Optional[str] = None) -> bool:
         now = datetime.now(timezone.utc).isoformat()
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
-                (new_title.strip()[:80], now, conv_id)
-            )
+            if user_id:
+                cursor.execute(
+                    "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND (user_id = ? OR user_id = '' OR user_id IS NULL)",
+                    (new_title.strip()[:80], now, conv_id, user_id)
+                )
+            else:
+                cursor.execute(
+                    "UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?",
+                    (new_title.strip()[:80], now, conv_id)
+                )
             return cursor.rowcount > 0
 
-    def delete_conversation(self, conv_id: str) -> bool:
+    def delete_conversation(self, conv_id: str, user_id: Optional[str] = None) -> bool:
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
+            if user_id:
+                cursor.execute(
+                    "DELETE FROM conversations WHERE id = ? AND (user_id = ? OR user_id = '' OR user_id IS NULL)",
+                    (conv_id, user_id)
+                )
+            else:
+                cursor.execute("DELETE FROM conversations WHERE id = ?", (conv_id,))
             return cursor.rowcount > 0
 
     def add_message(self, conv_id: str, role: str, content: str) -> Dict[str, Any]:
@@ -340,5 +467,18 @@ class ConversationRepository:
 
         self.update_title(conv_id, title)
         return title
+
+    def get_file(self, file_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM conversation_files WHERE id = ?", (file_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    def delete_file(self, file_id: str) -> bool:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM conversation_files WHERE id = ?", (file_id,))
+            return cursor.rowcount > 0
 
 conversation_repository = ConversationRepository()

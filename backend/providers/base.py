@@ -31,6 +31,21 @@ class BaseRealtimeProvider(ABC):
         pass
 
     @abstractmethod
+    async def send_text(self, text: str) -> None:
+        """Sends a text message to the provider."""
+        pass
+
+    @abstractmethod
+    async def interrupt(self) -> None:
+        """Notifies the provider of an interruption to stop current speech synthesis/output."""
+        pass
+
+    @abstractmethod
     async def close(self) -> None:
         """Closes the connection and releases resources."""
         pass
+
+    async def send_video(self, frame_bytes: bytes, mime_type: str = "image/jpeg") -> None:
+        """Sends an image/video frame (e.g. from camera or screen share) to the provider in-memory."""
+        pass
+

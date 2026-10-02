@@ -1,29 +1,29 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Paperclip, Mic, MicOff, Globe, Radio } from 'lucide-react';
+import { Send, Paperclip, Mic, MicOff, Globe } from 'lucide-react';
 import { SupportedLanguage } from '../types';
 import { SUPPORTED_LANGUAGES } from '../config/languages';
 import { QuickActionsMenu } from './QuickActionsMenu';
 
 interface ChatComposerProps {
-  onSendMessage: (message: string) => void;
+  onSendMessage: (message: string, inputMode?: 'text' | 'voice') => void;
   onTriggerFileUpload?: () => void;
-  onOpenVoice?: () => void;
   selectedLanguage: SupportedLanguage;
   onSelectLanguage: (lang: SupportedLanguage) => void;
   isLoading?: boolean;
   placeholder?: string;
   hasAttachedFiles?: boolean;
+  moduleTitle?: string;
 }
 
 export const ChatComposer: React.FC<ChatComposerProps> = ({
   onSendMessage,
   onTriggerFileUpload,
-  onOpenVoice,
   selectedLanguage,
   onSelectLanguage,
   isLoading = false,
   placeholder = 'Ask anything about your files or prompt...',
   hasAttachedFiles = false,
+  moduleTitle,
 }) => {
   const [text, setText] = useState('');
   const [showLangMenu, setShowLangMenu] = useState(false);
@@ -33,6 +33,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const wasDictatedRef = useRef<boolean>(false);
 
   const currentLang = SUPPORTED_LANGUAGES.find((l) => l.code === selectedLanguage) || SUPPORTED_LANGUAGES[0];
 
@@ -45,7 +46,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       } catch (_) {}
       setIsDictating(false);
     }
-    onSendMessage(text.trim());
+    const mode: 'text' | 'voice' = wasDictatedRef.current ? 'voice' : 'text';
+    onSendMessage(text.trim(), mode);
+    wasDictatedRef.current = false;
     setText('');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -61,6 +64,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setText(e.target.value);
+    wasDictatedRef.current = false; // User typed manually
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
@@ -76,7 +80,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
         textareaRef.current.style.height = 'auto';
       }
     }
-    onSendMessage(finalPrompt);
+    wasDictatedRef.current = false;
+    onSendMessage(finalPrompt, 'text');
   };
 
   // Toggle Speech Recognition dictation into the text area
@@ -85,7 +90,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      setDictationError('Speech recognition is not supported in this browser. You can use the Live Voice button.');
+      setDictationError('Speech recognition is not supported in this browser.');
       setTimeout(() => setDictationError(null), 4000);
       return;
     }
@@ -108,6 +113,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
 
       recognition.onstart = () => {
         setIsDictating(true);
+        wasDictatedRef.current = true;
       };
 
       recognition.onresult = (event: any) => {
@@ -117,6 +123,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
         }
         if (transcript) {
           setText(transcript);
+          wasDictatedRef.current = true;
           if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 160)}px`;
@@ -172,9 +179,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       {showLangMenu && (
         <div
           ref={menuRef}
-          className="absolute bottom-full mb-2 left-0 w-64 max-h-72 overflow-y-auto rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl p-2 z-50 scrollbar-thin scrollbar-thumb-slate-800"
+          className="absolute bottom-full mb-2 left-0 w-64 max-h-72 overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl p-2 z-50 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800"
         >
-          <div className="px-2.5 py-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+          <div className="px-2.5 py-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
             Select Response Language
           </div>
           <div className="space-y-0.5">
@@ -187,8 +194,8 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 }}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-colors ${
                   selectedLanguage === lang.code
-                    ? 'bg-indigo-600 text-white font-medium'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-indigo-600 text-white font-medium shadow-sm'
+                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <span className="flex items-center gap-2">
@@ -203,7 +210,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
       )}
 
       {/* Main Composer Box */}
-      <div className="flex flex-col rounded-2xl bg-slate-900/90 border border-slate-800 focus-within:border-indigo-500/70 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all shadow-lg p-2.5">
+      <div className="flex flex-col rounded-2xl bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 focus-within:border-indigo-500/70 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all shadow-lg p-2.5">
         <textarea
           ref={textareaRef}
           value={text}
@@ -218,12 +225,12 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
           }
           rows={1}
           disabled={isLoading}
-          className={`w-full bg-transparent text-slate-100 placeholder-slate-500 text-sm md:text-base resize-none focus:outline-none px-2 py-1 max-h-40 leading-relaxed ${
-            isDictating ? 'placeholder-rose-400 animate-pulse' : ''
+          className={`w-full bg-transparent text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-sm md:text-base resize-none focus:outline-none px-2 py-1 max-h-40 leading-relaxed ${
+            isDictating ? 'placeholder-rose-500 dark:placeholder-rose-400 animate-pulse' : ''
           }`}
         />
 
-        <div className="flex flex-wrap items-center justify-between pt-2 border-t border-slate-800/80 mt-1 gap-2">
+        <div className="flex flex-wrap items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800/80 mt-1 gap-2">
           {/* Left Action Controls: Upload + Quick Actions + Language */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {onTriggerFileUpload && (
@@ -231,7 +238,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
                 type="button"
                 onClick={onTriggerFileUpload}
                 title="Attach document or media"
-                className="p-2 rounded-xl text-slate-400 hover:text-indigo-300 hover:bg-slate-800 transition-colors cursor-pointer"
+                className="p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <Paperclip size={18} />
               </button>
@@ -247,9 +254,9 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             <button
               type="button"
               onClick={() => setShowLangMenu(!showLangMenu)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700/60 text-xs text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer"
             >
-              <Globe size={14} className="text-indigo-400" />
+              <Globe size={14} className="text-indigo-600 dark:text-indigo-400" />
               <span>{currentLang.flag}</span>
               <span className="font-medium hidden sm:inline">{currentLang.name}</span>
             </button>
@@ -261,28 +268,19 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
             <button
               type="button"
               onClick={toggleDictation}
-              title={isDictating ? 'Stop Dictating' : `Dictate in ${currentLang.name}`}
+              title={
+                isDictating
+                  ? 'Stop Dictating'
+                  : `Dictate prompt in ${currentLang.name} (AI will speak answer aloud)`
+              }
               className={`p-2 rounded-xl transition-all cursor-pointer ${
                 isDictating
                   ? 'bg-rose-600 text-white animate-pulse shadow-md shadow-rose-600/40'
-                  : 'text-slate-400 hover:text-indigo-300 hover:bg-slate-800'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               {isDictating ? <MicOff size={18} /> : <Mic size={18} />}
             </button>
-
-            {/* Real-Time Gemini Live Voice Session Trigger */}
-            {onOpenVoice && (
-              <button
-                type="button"
-                onClick={onOpenVoice}
-                title="Start Real-Time Voice Conversation (AI Speaks Back)"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-rose-500/20 to-indigo-500/20 hover:from-rose-500/30 hover:to-indigo-500/30 border border-rose-500/40 text-rose-300 hover:text-white transition-all cursor-pointer shadow-sm active:scale-95"
-              >
-                <Radio size={14} className="text-rose-400 animate-pulse" />
-                <span className="text-xs font-semibold">Live Voice</span>
-              </button>
-            )}
 
             {/* Send Message Button */}
             <button
@@ -292,7 +290,7 @@ export const ChatComposer: React.FC<ChatComposerProps> = ({
               className={`p-2.5 rounded-xl font-medium transition-all duration-150 flex items-center justify-center ${
                 text.trim() && !isLoading
                   ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 cursor-pointer active:scale-95'
-                  : 'bg-slate-800 text-slate-600 cursor-not-allowed'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
               }`}
             >
               <Send size={16} />

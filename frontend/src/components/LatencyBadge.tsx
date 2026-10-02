@@ -1,5 +1,5 @@
 import React from 'react';
-import { Zap, Wifi } from 'lucide-react';
+import { Zap } from 'lucide-react';
 
 interface LatencyBadgeProps {
   latencyMs: number | null;
@@ -12,38 +12,35 @@ export const LatencyBadge: React.FC<LatencyBadgeProps> = ({
   isConnected,
   voiceMode = 'gemini',
 }) => {
+  const isMock = voiceMode === 'mock';
+
   return (
-    <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 text-xs shadow-inner">
-      {/* Connection Indicator */}
-      <div className="flex items-center gap-1.5">
-        <span
-          className={`w-2 h-2 rounded-full ${
-            isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
-          }`}
-        />
-        <span className="text-slate-400 font-mono text-[11px]">
-          {isConnected ? 'LIVE' : 'OFFLINE'}
+    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 border border-slate-800 text-xs shadow-inner">
+      {/* Provider State Badge */}
+      {isMock ? (
+        <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold tracking-wide">
+          DEVELOPMENT MOCK MODE
         </span>
-      </div>
+      ) : (
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+              }`}
+          />
+          <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold tracking-wide">
+            LIVE AI
+          </span>
+        </div>
+      )}
 
       {/* Latency Display */}
       {latencyMs !== null && (
         <>
           <span className="text-slate-700">|</span>
-          <div className="flex items-center gap-1 text-indigo-300 font-mono font-medium">
-            <Zap size={12} className="text-amber-400" />
+          <div className="flex items-center gap-1 text-indigo-300 font-mono font-medium text-[11px]">
+            <Zap size={11} className="text-amber-400" />
             <span>{latencyMs} ms</span>
           </div>
-        </>
-      )}
-
-      {/* Mode Tag */}
-      {voiceMode === 'mock' && (
-        <>
-          <span className="text-slate-700">|</span>
-          <span className="px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] uppercase font-semibold">
-            Mock Mode
-          </span>
         </>
       )}
     </div>

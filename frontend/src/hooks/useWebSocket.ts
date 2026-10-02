@@ -20,6 +20,20 @@ export function useWebSocket({
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
 
+  const onOpenRef = useRef(onOpen);
+  const onCloseRef = useRef(onClose);
+  const onErrorRef = useRef(onError);
+  const onJsonMessageRef = useRef(onJsonMessage);
+  const onBinaryMessageRef = useRef(onBinaryMessage);
+
+  useEffect(() => {
+    onOpenRef.current = onOpen;
+    onCloseRef.current = onClose;
+    onErrorRef.current = onError;
+    onJsonMessageRef.current = onJsonMessage;
+    onBinaryMessageRef.current = onBinaryMessage;
+  });
+
   const getDefaultWsUrl = useCallback(() => {
     if (import.meta.env.VITE_WS_URL) {
       return import.meta.env.VITE_WS_URL;
@@ -43,31 +57,31 @@ export function useWebSocket({
 
     ws.onopen = () => {
       setIsConnected(true);
-      if (onOpen) onOpen();
+      if (onOpenRef.current) onOpenRef.current();
     };
 
     ws.onclose = (e) => {
       setIsConnected(false);
-      if (onClose) onClose(e);
+      if (onCloseRef.current) onCloseRef.current(e);
     };
 
     ws.onerror = (e) => {
-      if (onError) onError(e);
+      if (onErrorRef.current) onErrorRef.current(e);
     };
 
     ws.onmessage = (event) => {
       if (typeof event.data === 'string') {
         try {
           const json = JSON.parse(event.data);
-          if (onJsonMessage) onJsonMessage(json);
+          if (onJsonMessageRef.current) onJsonMessageRef.current(json);
         } catch (err) {
           console.error('Failed to parse WS JSON message:', err);
         }
       } else if (event.data instanceof ArrayBuffer) {
-        if (onBinaryMessage) onBinaryMessage(event.data);
+        if (onBinaryMessageRef.current) onBinaryMessageRef.current(event.data);
       }
     };
-  }, [getDefaultWsUrl, onBinaryMessage, onClose, onError, onJsonMessage, onOpen, url]);
+  }, [getDefaultWsUrl, url]);
 
   const disconnect = useCallback(() => {
     if (socketRef.current) {

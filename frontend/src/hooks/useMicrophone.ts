@@ -220,6 +220,7 @@ export function useMicrophone({ onAudioChunk, targetSampleRate = 16000 }: UseMic
       }
 
       setIsRecording(true);
+      console.info('[VOICE] microphone started');
     } catch (setupErr: any) {
       console.error('Audio processing setup error:', setupErr);
       setError(`Audio processing setup failed: ${setupErr.message}`);

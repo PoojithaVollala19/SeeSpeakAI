@@ -157,29 +157,29 @@ export const QuickActionsMenu: React.FC<QuickActionsMenuProps> = ({
         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all shadow-sm cursor-pointer select-none ${
           isOpen
             ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
-            : 'bg-slate-800/90 hover:bg-slate-800 border-slate-700/80 text-slate-300 hover:text-white'
+            : 'bg-slate-100 dark:bg-slate-800/90 hover:bg-slate-200 dark:hover:bg-slate-800 border-slate-200 dark:border-slate-700/80 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
         } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
       >
-        <Zap size={14} className={isOpen ? 'text-white' : 'text-amber-400'} />
+        <Zap size={14} className={isOpen ? 'text-white' : 'text-amber-500 dark:text-amber-400'} />
         <span>Quick Actions</span>
         <ChevronDown size={13} className={`transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Popover Dropdown Menu */}
       {isOpen && (
-        <div className="absolute bottom-full mb-2.5 left-0 w-84 sm:w-96 max-h-[480px] flex flex-col rounded-2xl bg-slate-900 border border-slate-700/80 shadow-2xl z-50 overflow-hidden animate-fadeIn">
+        <div className="absolute bottom-full mb-2.5 left-0 w-84 sm:w-96 max-h-[480px] flex flex-col rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 shadow-2xl z-50 overflow-hidden animate-fadeIn">
           {/* Header & Explanation Level Selector */}
-          <div className="p-3 bg-slate-850 border-b border-slate-800/80 shrink-0">
+          <div className="p-3 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800/80 shrink-0">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles size={13} className="text-indigo-400" />
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={13} className="text-indigo-600 dark:text-indigo-400" />
                 Explanation Depth
               </span>
               <span className="text-[10px] text-slate-500 font-mono">Grounded Prompting</span>
             </div>
 
             {/* Depth Selector Pills */}
-            <div className="grid grid-cols-3 gap-1.5 bg-slate-950/60 p-1 rounded-xl border border-slate-800">
+            <div className="grid grid-cols-3 gap-1.5 bg-slate-100 dark:bg-slate-950/60 p-1 rounded-xl border border-slate-200 dark:border-slate-800">
               {(['Light', 'Moderate', 'Detailed'] as ExplanationLevel[]).map((l) => (
                 <button
                   key={l}
@@ -188,7 +188,7 @@ export const QuickActionsMenu: React.FC<QuickActionsMenuProps> = ({
                   className={`flex items-center justify-center gap-1 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                     level === l
                       ? 'bg-indigo-600 text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800/60'
                   }`}
                 >
                   {level === l && <CheckCircle2 size={11} />}
@@ -199,7 +199,7 @@ export const QuickActionsMenu: React.FC<QuickActionsMenuProps> = ({
           </div>
 
           {/* Action Items List */}
-          <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-slate-800">
+          <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
             <div className="px-2.5 py-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider font-mono">
               Academic & Study Actions
             </div>
@@ -209,16 +209,16 @@ export const QuickActionsMenu: React.FC<QuickActionsMenuProps> = ({
                 key={action.id}
                 type="button"
                 onClick={() => handleActionClick(action)}
-                className="w-full flex items-start gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-slate-800/90 text-slate-200 hover:text-white transition-colors group cursor-pointer"
+                className="w-full flex items-start gap-2.5 px-3 py-2 rounded-xl text-left hover:bg-slate-100 dark:hover:bg-slate-800/90 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white transition-colors group cursor-pointer"
               >
-                <div className="p-1.5 rounded-lg bg-slate-800 border border-slate-700/60 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
+                <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700/60 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
                   {action.icon}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-slate-200 group-hover:text-indigo-300 flex items-center justify-between">
+                  <div className="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-300 flex items-center justify-between">
                     <span>{action.label}</span>
                   </div>
-                  <div className="text-[11px] text-slate-400 truncate leading-snug">
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate leading-snug">
                     {action.shortDesc}
                   </div>
                 </div>
